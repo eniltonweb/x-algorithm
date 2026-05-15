@@ -47,7 +47,7 @@ def load_model_params(checkpoint_path: str) -> hk.Params:
     Returns:
         Haiku params dict (nested FrozenDict)
     """
-    data = np.load(checkpoint_path, allow_pickle=True)
+    data = np.load(checkpoint_path, allow_pickle=False)
     params: dict = {}
     for key in data.files:
         parts = key.split("/")

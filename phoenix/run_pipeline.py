@@ -208,7 +208,7 @@ def main():
     )
 
     log.info("Loading corpus...")
-    corpus = np.load(corpus_file, allow_pickle=True)
+    corpus = np.load(corpus_file, allow_pickle=False)
     corpus_post_ids = corpus["post_ids"]
     corpus_repr = corpus["candidate_representations"]
     corpus_author_ids = corpus["author_ids"]
