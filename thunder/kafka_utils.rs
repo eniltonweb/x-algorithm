@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use xai_kafka::KafkaProducerConfig;
 use xai_kafka::config::{KafkaConfig, KafkaConsumerConfig, SslConfig};
+use xai_kafka::KafkaProducerConfig;
 use xai_wily::WilyConfig;
 
 use crate::{
@@ -24,13 +24,20 @@ pub async fn start_kafka(
     user: &str,
     tx: tokio::sync::mpsc::Sender<i64>,
 ) -> Result<()> {
-    let sasl_password = std::env::var("")
+    let sasl_password = std::env::var("SASL_PASSWORD")
         .ok()
-        .or(args.sasl_password.clone())?;
+        .filter(|s| !s.is_empty())
+        .or_else(|| args.sasl_password.clone().filter(|s| !s.is_empty()))
+        .context("Missing SASL password: must be provided via SASL_PASSWORD env var or --sasl-password flag")?;
 
-    let producer_sasl_password = std::env::var("")
+    let producer_sasl_password = std::env::var("PRODUCER_SASL_PASSWORD")
         .ok()
-        .or(args.producer_sasl_password.clone());
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            args.producer_sasl_password
+                .clone()
+                .filter(|s| !s.is_empty())
+        });
 
     if args.is_serving {
         let unique_id = uuid::Uuid::new_v4().to_string();
