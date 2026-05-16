@@ -9,6 +9,7 @@ import traceback
 from multiprocessing import Event, Process, Queue
 from multiprocessing.synchronize import Event as MultiprocessingEvent
 from queue import Empty
+from urllib.parse import urlparse
 
 import aiohttp
 from cachetools import TTLCache
@@ -37,11 +38,17 @@ class _ASRResult(BaseModel):
 def _extract_wav_from_url(
     video_url: str, max_duration_s: float | None = None
 ) -> bytes | None:
+    parsed_url = urlparse(video_url)
+    if parsed_url.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid or unsupported URL scheme: {parsed_url.scheme}")
+
     with tempfile.TemporaryDirectory() as tmpdir:
         wav_path = os.path.join(tmpdir, "audio.wav")
         cmd = [
             "ffmpeg",
             "-y",
+            "-protocol_whitelist",
+            "file,http,https,tcp,tls,crypto,data",
             "-timeout",
             "60000000",
             "-rw_timeout",
