@@ -24,13 +24,29 @@ pub async fn start_kafka(
     user: &str,
     tx: tokio::sync::mpsc::Sender<i64>,
 ) -> Result<()> {
-    let sasl_password = std::env::var("")
+    let sasl_password = std::env::var("SASL_PASSWORD")
         .ok()
-        .or(args.sasl_password.clone())?;
+        .or(args.sasl_password.clone());
 
-    let producer_sasl_password = std::env::var("")
+    let sasl_password = match sasl_password {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            log::error!("SASL_PASSWORD is empty or missing");
+            anyhow::bail!("SASL_PASSWORD is empty or missing");
+        }
+    };
+
+    let producer_sasl_password = std::env::var("PRODUCER_SASL_PASSWORD")
         .ok()
         .or(args.producer_sasl_password.clone());
+
+    let producer_sasl_password = match producer_sasl_password {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            log::error!("PRODUCER_SASL_PASSWORD is empty or missing");
+            anyhow::bail!("PRODUCER_SASL_PASSWORD is empty or missing");
+        }
+    };
 
     if args.is_serving {
         let unique_id = uuid::Uuid::new_v4().to_string();
@@ -44,7 +60,7 @@ pub async fn start_kafka(
                     security_protocol: args.security_protocol.clone(),
                     sasl_mechanism: Some(args.producer_sasl_mechanism.clone()),
                     sasl_username: Some(args.producer_sasl_username.clone()),
-                    sasl_password: producer_sasl_password.clone(),
+                    sasl_password: Some(producer_sasl_password.clone()),
                 }),
                 ..Default::default()
             },
@@ -101,7 +117,7 @@ pub async fn start_kafka(
                     security_protocol: args.security_protocol.clone(),
                     sasl_mechanism: Some(args.producer_sasl_mechanism.clone()),
                     sasl_username: Some(args.producer_sasl_username.clone()),
-                    sasl_password: producer_sasl_password.clone(),
+                    sasl_password: Some(producer_sasl_password.clone()),
                 }),
                 ..Default::default()
             },
