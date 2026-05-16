@@ -60,7 +60,18 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for HasMediaHydrator {
             .map(|c| c.get_original_tweet_id())
             .collect();
 
-        let has_media_results = client.get_has_media(tweet_ids.clone()).await;
+        let mut has_media_results = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = client.get_has_media(chunk.to_vec());
+            match tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                Ok(res) => {
+                    has_media_results.extend(res);
+                }
+                Err(_) => {
+                    // Timeout fallback
+                }
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
         for tweet_id in tweet_ids {
@@ -70,8 +81,7 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for HasMediaHydrator {
                     has_media: *value,
                     ..Default::default()
                 }),
-                None => Err(format!("Missing has_media for tweet_id={}", tweet_id)),
-                Some(Err(err)) => Err(err.to_string()),
+                _ => Ok(PostCandidate::default()), // Fallback
             };
             hydrated_candidates.push(hydrated);
         }

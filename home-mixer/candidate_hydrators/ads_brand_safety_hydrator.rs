@@ -97,23 +97,33 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for AdsBrandSafetyHydrator 
             HashMap::new();
         let mut error_map: HashMap<u64, String> = HashMap::new();
 
-        match self.client.batch_get_all_labels(&all_ids_i64).await {
-            Ok(per_key_results) => {
-                for (&id, result) in all_ids_vec.iter().zip(per_key_results) {
-                    match result {
-                        Ok(labels) => {
-                            label_map.insert(id, labels);
-                        }
-                        Err(e) => {
-                            error_map.insert(id, e.to_string());
+        for chunk_i64 in all_ids_i64.chunks(100) {
+            let future = self.client.batch_get_all_labels(&chunk_i64.to_vec());
+            match tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                Ok(Ok(per_key_results)) => {
+                    for (&id_i64, result) in chunk_i64.iter().zip(per_key_results) {
+                        let id_u64 = id_i64 as u64;
+                        match result {
+                            Ok(labels) => {
+                                label_map.insert(id_u64, labels);
+                            }
+                            Err(e) => {
+                                error_map.insert(id_u64, e.to_string());
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                let err_str = e.to_string();
-                for &id in &all_ids_vec {
-                    error_map.insert(id, err_str.clone());
+                Ok(Err(e)) => {
+                    let err_str = e.to_string();
+                    for &id_i64 in chunk_i64 {
+                        error_map.insert(id_i64 as u64, err_str.clone());
+                    }
+                }
+                Err(_) => {
+                    let err_str = "Timeout".to_string();
+                    for &id_i64 in chunk_i64 {
+                        error_map.insert(id_i64 as u64, err_str.clone());
+                    }
                 }
             }
         }

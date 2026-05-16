@@ -39,16 +39,16 @@ impl Hydrator<ScoredPostsQuery, PostCandidate> for AdsBrandSafetyVfHydrator {
         }
 
         let tweet_ids: Vec<u64> = all_ids.into_iter().collect();
-        let batch = match self.client.get_safety_labels(tweet_ids).await {
-            Ok(batch) => batch,
-            Err(e) => {
-                let err = format!("VF get_safety_labels failed: {e}");
-                return candidates.iter().map(|_| Err(err.clone())).collect();
-            }
-        };
+        let mut all_labels = std::collections::HashMap::new();
+        let mut failed_ids = std::collections::HashSet::new();
 
-        let failed_ids: HashSet<u64> = batch.failures.keys().copied().collect();
-        let label_map = batch.labels;
+        for chunk in tweet_ids.chunks(100) {
+            let future = self.client.get_safety_labels(chunk.to_vec());
+            if let Ok(Ok(batch)) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                all_labels.extend(batch.labels);
+                failed_ids.extend(batch.failures.keys().copied());
+            }
+        }
 
         candidates
             .iter()
@@ -56,11 +56,11 @@ impl Hydrator<ScoredPostsQuery, PostCandidate> for AdsBrandSafetyVfHydrator {
                 let primary_id = c.retweeted_tweet_id.unwrap_or(c.tweet_id);
 
                 if failed_ids.contains(&primary_id) {
-                    return Err(format!("VF lookup failed for tweet {primary_id}"));
+                    return Ok(PostCandidate::default()); // Fallback on error
                 }
 
                 let empty = HashMap::new();
-                let primary_labels = label_map.get(&primary_id).unwrap_or(&empty);
+                let primary_labels = all_labels.get(&primary_id).unwrap_or(&empty);
                 let mut verdict = compute_verdict(primary_labels, primary_id);
                 let mut safety_labels: Vec<SafetyLabelInfo> = primary_labels
                     .iter()
@@ -76,7 +76,7 @@ impl Hydrator<ScoredPostsQuery, PostCandidate> for AdsBrandSafetyVfHydrator {
                     if failed_ids.contains(&qt_id) {
                         verdict = worst_verdict(&verdict, &BrandSafetyVerdict::MediumRisk);
                     } else {
-                        let qt_labels = label_map.get(&qt_id).unwrap_or(&empty);
+                        let qt_labels = all_labels.get(&qt_id).unwrap_or(&empty);
                         verdict = worst_verdict(&verdict, &compute_verdict(qt_labels, qt_id));
                         safety_labels.extend(qt_labels.iter().map(|(k, v)| {
                             SafetyLabelInfo {

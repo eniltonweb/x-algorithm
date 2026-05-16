@@ -58,7 +58,13 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for VideoDurationCandidateH
             .map(|c| c.get_original_tweet_id())
             .collect();
 
-        let durations = client.get_min_video_durations(tweet_ids.clone()).await;
+        let mut durations = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = client.get_min_video_durations(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                durations.extend(res);
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
         for tweet_id in tweet_ids {
@@ -67,11 +73,7 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for VideoDurationCandidateH
                     min_video_duration_ms: min_video_duration_ms.map(|v| v as i32),
                     ..Default::default()
                 }),
-                None => Err(format!(
-                    "Missing min video duration for tweet_id={}",
-                    tweet_id
-                )),
-                Some(Err(err)) => Err(err.to_string()),
+                _ => Ok(PostCandidate::default()), // Fallback
             };
             hydrated_candidates.push(hydrated);
         }

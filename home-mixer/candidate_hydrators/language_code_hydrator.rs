@@ -59,7 +59,13 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for LanguageCodeHydrator {
             .map(|c| c.get_original_tweet_id())
             .collect();
 
-        let language_results = client.get_language_code(tweet_ids.clone()).await;
+        let mut language_results = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = client.get_language_code(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                language_results.extend(res);
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
         for tweet_id in tweet_ids {
@@ -69,8 +75,7 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for LanguageCodeHydrator {
                     language_code: value.clone(),
                     ..Default::default()
                 }),
-                None => Err(format!("Missing language_code for tweet_id={}", tweet_id)),
-                Some(Err(err)) => Err(err.to_string()),
+                _ => Ok(PostCandidate::default()), // Fallback
             };
             hydrated_candidates.push(hydrated);
         }

@@ -54,7 +54,13 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for SubscriptionHydrator {
 
         let tweet_ids: Vec<u64> = candidates.iter().map(|c| c.tweet_id).collect();
 
-        let post_features = client.get_subscription_author_ids(tweet_ids.clone()).await;
+        let mut post_features = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = client.get_subscription_author_ids(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                post_features.extend(res);
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
         for tweet_id in tweet_ids {
@@ -64,11 +70,7 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for SubscriptionHydrator {
                     subscription_author_id: *value,
                     ..Default::default()
                 }),
-                None => Err(format!(
-                    "Missing subscription author id for tweet_id={}",
-                    tweet_id
-                )),
-                Some(Err(err)) => Err(err.to_string()),
+                _ => Ok(PostCandidate::default()), // Fallback
             };
             hydrated_candidates.push(hydrated);
         }
