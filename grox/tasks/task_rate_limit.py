@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from abc import abstractmethod
 from typing import Awaitable, override
@@ -14,7 +15,12 @@ logger = logging.getLogger(__name__)
 class TaskRateLimit(Task):
     @classmethod
     async def _exec(cls, ctx: TaskContext) -> None:
-        eligible = await cls._eligible(ctx)
+        try:
+            eligible = await asyncio.wait_for(cls._eligible(ctx), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"TaskRateLimit._eligible timed out for {cls.get_name()}")
+            eligible = False
+
         Metrics.counter("task.rate_limit.count").add(
             1, attributes={"task_name": cls.get_name(), "passed": eligible}
         )

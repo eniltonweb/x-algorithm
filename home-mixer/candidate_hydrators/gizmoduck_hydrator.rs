@@ -75,7 +75,13 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for GizmoduckCandidateHydra
         user_ids_to_fetch.extend(retweet_user_ids);
         user_ids_to_fetch.dedup();
 
-        let users = client.get_users(user_ids_to_fetch).await;
+        let mut users = std::collections::HashMap::new();
+        for chunk in user_ids_to_fetch.chunks(100) {
+            let future = client.get_users(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                users.extend(res);
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
 
@@ -118,7 +124,7 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for GizmoduckCandidateHydra
                         ..Default::default()
                     })
                 }
-                (Err(err), _) | (_, Err(err)) => Err(err),
+                _ => Ok(PostCandidate::default()), // Fallback
             };
             hydrated_candidates.push(hydrated);
         }

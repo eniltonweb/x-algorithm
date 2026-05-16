@@ -69,14 +69,20 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for CoreDataCandidateHydrat
 
         let tweet_ids: Vec<u64> = candidates.iter().map(|c| c.tweet_id).collect();
 
-        let post_features = client.get_tweet_core_datas(tweet_ids.clone()).await;
+        let mut post_features = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = client.get_tweet_core_datas(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                post_features.extend(res);
+            }
+        }
 
         let mut hydrated_candidates = Vec::with_capacity(candidates.len());
         let mut hydrated_count = 0usize;
         let mut missing_count = 0usize;
         for tweet_id in tweet_ids {
-            let post_features = post_features.get(&tweet_id);
-            match post_features {
+            let core_data = post_features.get(&tweet_id);
+            match core_data {
                 Some(Ok(Some(core_data))) => {
                     hydrated_count += 1;
                     let text = core_data.text.clone();
@@ -90,14 +96,11 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for CoreDataCandidateHydrat
                     };
                     hydrated_candidates.push(Ok(hydrated));
                 }
-                Some(Ok(None)) | None => {
+                _ => {
                     missing_count += 1;
-                    hydrated_candidates.push(Ok(PostCandidate::default()));
+                    hydrated_candidates.push(Ok(PostCandidate::default())); // Fallback
                 }
-                Some(Err(err)) => {
-                    hydrated_candidates.push(Err(err.to_string()));
-                }
-            }
+            };
         }
 
         self.record_hydration_stats(hydrated_count, missing_count);

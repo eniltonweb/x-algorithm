@@ -89,7 +89,13 @@ impl Hydrator<ScoredPostsQuery, PostCandidate> for VFCandidateHydrator {
             context,
         );
 
-        let (in_network_result, oon_result) = join(in_network_future, oon_future).await;
+        let (in_network_result, oon_result) = match tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            join(in_network_future, oon_future)
+        ).await {
+            Ok(res) => res,
+            Err(_) => (std::collections::HashMap::new(), std::collections::HashMap::new()),
+        };
         let mut all_results: HashMap<u64, Result<Option<FilteredReason>>> = HashMap::new();
         all_results.extend(in_network_result);
         all_results.extend(oon_result);

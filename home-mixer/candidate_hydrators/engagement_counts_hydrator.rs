@@ -84,7 +84,13 @@ impl CachedHydrator<ScoredPostsQuery, PostCandidate> for EngagementCountsHydrato
             .map(|c| c.get_original_tweet_id())
             .collect();
 
-        let counts_results = self.tes_client.get_api_counts(tweet_ids.clone()).await;
+        let mut counts_results = std::collections::HashMap::new();
+        for chunk in tweet_ids.chunks(100) {
+            let future = self.tes_client.get_api_counts(chunk.to_vec());
+            if let Ok(res) = tokio::time::timeout(std::time::Duration::from_millis(500), future).await {
+                counts_results.extend(res);
+            }
+        }
 
         tweet_ids
             .iter()
